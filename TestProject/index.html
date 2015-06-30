@@ -1,0 +1,537 @@
+﻿<!DOCTYPE html>
+
+<!-------------------Hello!
+This is a demo of a few basic Javascript functions we might use at the DOT
+See more about the ArcGIS Javascript API at:
+http://help.arcgis.com/en/webapi/javascript/arcgis/jsapi/
+
+---------------------------------------------------------------------------->
+
+<!---------------- for demo purposes, all the code here is in one file
+Normalyl you would have a separate HTML, CSS, Javascript files, and also folders for images
+-------------------------------------------------------------------------------------->
+
+<html> 
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=7, IE=9">
+    <!--The viewport meta tag is used to improve the presentation and behavior of the samples 
+      on iOS devices-->
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+        
+    <title>ArcGIS API for Javascript demo</title>      
+    <script type="text/javascript">        var djConfig = { parseOnLoad: true };</script>
+
+
+    <link rel="stylesheet" href="http://serverapi.arcgisonline.com/jsapi/arcgis/3.3/js/dojo/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" href="http://serverapi.arcgisonline.com/jsapi/arcgis/3.3/js/esri/css/esri.css">
+      
+
+	  <!------------------------ below is CSS, used for style elements 
+	  ---------- best to keep these parameters in CSS and not in HTML!
+	  ---------- normally CSS would have its own file
+	  ------------------------------------------------------------------->
+    <style>
+		html, body {
+			height: 100%;
+			width: 100%;
+			margin: 0;
+			padding: 0;
+			font-family: Arial;
+		}
+		#header {//
+			margin-bottom: 1px;
+			border-style: solid;
+			border-width: 1px;//
+			padding-left: 10px;;
+			position: absolute;
+			height: 35px;
+		}
+
+		#sidebar {
+			border-style: solid;
+			border-width: 1px;
+			padding: 1;
+			width: 20%;
+			margin-right: 2px;
+			margin-left: 2px;
+		}
+		#map {
+			padding: 1;
+			border-style: solid;
+			border-width: 1px;
+		}
+		#title {
+			float: left;
+			position: relative;
+		}
+
+		#button {
+			padding: 1em 1em;
+			text-decoration: none;
+			float: right;
+		}
+
+		#layers {
+			width: 50px;
+			height: 200px;
+		}
+		#opacity {
+			float: right;
+			width: 20%;
+			position: relative;
+			padding:right 10px;
+		}
+
+		h1 {
+			font-size: 13pt;
+			margin: 0;
+			padding: 0;
+			font-family: Arial;
+			font-weight: bold;
+		}
+
+		h2 {
+			font-size: 8pt;
+			margin: 0;
+			padding: 0;
+			font-family: Arial;
+			font-weight: normal;
+		}
+
+    </style>
+
+	<!--------------- below is the main javascript functionality--------------------------------
+	--- in this case, the API is linked online
+	--- in a city department of workplace, normally the API would be downloaded to a local server
+	-------------------------------------------------------------------------------------------->
+	
+	<!-- the ArcGIS Javscript API is built using Dojo, a library for Javascript
+	------------ the 'require' statements below are similar to 'include' in C++ or 'Using' in C#
+	------------------------------------------------------------------------------------------->
+	
+    <script src="http://serverapi.arcgisonline.com/jsapi/arcgis/3.3/"></script>
+    <script>
+        dojo.require("dijit.layout.BorderContainer");
+        dojo.require("dijit.layout.ContentPane");
+        dojo.require("esri.map");
+        dojo.require("esri.dijit.Popup");     
+        dojo.require("esri.tasks.query");
+        dojo.require("esri.tasks.locator");
+        dojo.require("dijit.form.Button");
+        dojo.require("dijit.form.HorizontalSlider");
+      
+
+   
+        var map, locator; var query, queryTask; 
+        var tb;
+        var boroName; var onOff = 0;
+        var identifyTask, identifyParams, censusLayer;
+        var drawQuery; var drawQueryTask;
+        var opacityControl = null;
+      
+      
+        <!---------------------- init function is standard boilerplate for ArcGIS Javascript
+        <!-------------- map, event listeners are added here ----------------------------->
+	  
+        function init() {
+	  
+		
+            console.log("begin init function");
+            //setup the popup window - used in Identify Task 
+            var popup = new esri.dijit.Popup({
+                fillSymbol: new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,0,0]), 2), new dojo.Color([255,255,0,0.25]))
+            }, dojo.create("div"));
+        
+            map = new esri.Map("map", {   // note new shorthand method for constructing map object 
+                basemap: "streets",  // other basemaps include: "satellite" , "hybrid", "topo", "gray", "oceans", "national-geographic", "osm".
+                center: [ -74.0064 , 40.7142,],  //NYC center
+                zoom: 11,
+                infoWindow: popup  // this is used in Identify Task 
+            });
+        
+            tb = new esri.toolbars.Draw(map, {showTooltips:true}); // for draw query
+            // change tooltip to 'false' to remove floating tooltip during draw
+		
+            locator = new esri.tasks.Locator("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
+            dojo.connect(locator, "onAddressToLocationsComplete", showLocateResults);
+            // this is a locator provided by ESRI
+            // it is not that great! included here for demo
+            // you''ll want to use a Google geocoder
+            // see link:  https://developers.google.com/maps/documentation/geocoding/
+		
+       
+        
+            dojo.connect(map, "onLoad", initializeIdentifyTask); 
+            dojo.connect(map, "onLoad", querySetup);
+	
+            // these are event listeners
+            // form: (OBJECT that is acted upon, ACTION (onClick, onChange etc), CALLBACK (response when actioon happens)
+            // note that these listeners are used to load the functions only AFTER the page is fully loaded
+            // be careful with runtime in Javascript!
+		
+            dojo.connect(map, "onLoad", function() { // this function creates the Dojo slider
+                addOpacityControl(censusLayer);
+            });
+    
+               
+            censusLayer = new esri.layers.ArcGISDynamicMapServiceLayer("http://server.arcgisonline.com/ArcGIS/rest/services/Demographics/USA_Labor_Force_Participation_Rate/MapServer",{opacity:.5});
+
+            map.addLayer(censusLayer);	
+            // here we add the map service
+            // note that this is a free map service provided by ESRI
+            // go to the link in the line above to see all the details of this map service
+		
+            dojo.connect(map, "onLoad", function() {
+                alert("Welcome to the demo! Be sure to turn on Firebug or your console tool to see runtime messages.");
+	  		
+            });
+      	
+        }  // end init
+
+            function addOpacityControl() {
+                // this code copied from JS Fiddle:
+                // http://jsfiddle.net/greenlaw/DKEXH/
+                // a great site for testing JS/HTML/CSS code and finding samples
+                var targetElem = dojo.byId("opacity");
+                var sliderElem = dojo.create("div", {id: "opacity_slider"}, targetElem, "first");
+                opacityControl = new dijit.form.HorizontalSlider({
+                    name: "slider",
+                    value: 1,
+                    minimum: 0,
+                    maximum: 1,
+                    showButtons: true,
+                    intermediateChanges: true,
+                    style: "width: 250px; margin-right: auto; margin-left: auto;",
+                    onChange: function(value) {
+                        censusLayer.setOpacity(value);
+                        // Refresh seems to be required for IE:
+                        //censusLayer.refresh();
+                    }
+                }, "opacity_slider");
+                opacityControl.startup();
+            }
+	
+
+      
+            function querySetup(selectedItem)
+            {
+                // Queries have two main parts: the parameter setup (properties) and the task function (called QueryTask in the API)
+                // generally queries will be attached to some event that triggers the task (onClick etc)
+                // see the ESRI API documentaion for more about QueryTask:
+                // http://help.arcgis.com/en/webapi/javascript/arcgis/jsapi/query.html
+		
+                query = new esri.tasks.Query();
+                query.returnGeometry = true;
+                query.outFields =["NAME"];
+                queryTask = new esri.tasks.QueryTask("http://server.arcgisonline.com/ArcGIS/rest/services/Demographics/USA_Labor_Force_Participation_Rate/MapServer/3");
+
+            }
+		
+            function executeCountyQuery(selectedItem)
+            {
+                console.log("county query execute function");
+                // once query properties are defined, the trask may be exectued when a specified event occurs
+                // see line 396, in HTML, to see the code for event
+                // note: ESRI examples sometimes write JS functions into HTML_but don't get in the habit of this!
+                // 'selectedItem' is passed here from the dropdown menu selection
+                //'where' statement uses same syntax as SQL statement in ArcMap
+		
+                boroName = selectedItem.value + " County";
+                query.where = "ST_ABBREV = 'NY' AND NAME = '" + boroName + "'";
+                console.log("value?" + boroName);
+                queryTask.execute(query, showCountyQueryResults);
+	
+            }		
+            function showCountyQueryResults(featureSet)
+            {
+                // when query is complete, the returned features get sym bology
+                // 'featureSet' above is the compltee array or results of the query
+                // the name here is only a placeholder ('featureSet' could be also 'results', 'array' or whatever
+		 
+                map.graphics.clear();
+                symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_DASHDOT, new dojo.Color([255,0,0]), 2), new dojo.Color([255,255,0,0.5]));
+  
+                //QueryTask returns a featureSet.  Loop through features in the featureSet and add them to the map.
+
+                dojo.forEach(featureSet.features,function(feature){  //forEach will iterate through every array member
+                    // note here, 'feature'is a single element of array 'features'
+                    var graphic = feature;							
+                    graphic.setSymbol(symbol);
+
+                    //Add graphic to the map graphics layer.
+                    console.log("adding graphics now");
+                    map.graphics.add(graphic);
+	  
+                    var locExtent = new esri.geometry.Extent();   
+                    locExtent = map.graphics.graphics[0].geometry.getExtent();  // since there is only one result here,
+                    // [0] is first element of graphics array
+                    map.setExtent(locExtent.expand(1.5));        
+                });
+            }
+
+
+            //////////////////////////////////////////////////////////
+            //source for locate example: 
+            //// http://help.arcgis.com/en/webapi/javascript/arcgis/jssamples/locator_address.html /////
+
+
+            function locate() {   // ESRI locator declared in inti function
+                map.graphics.clear();
+                var address = {"SingleLine":dojo.byId("address").value};  //dojo.byID refers to an HTML element (see code at bottom)
+                locator.outSpatialReference= map.extent.spatialReference;
+                var options = {
+                    address:address,
+                    outFields:["Loc_name"]
+                }
+                locator.addressToLocations(options);
+            }
+
+            function showLocateResults(candidates) {
+                console.log("address located, now getting ready to zoom and symbolize");
+	  
+                var candidate;
+                var thisSymbol = new esri.symbol.SimpleMarkerSymbol();
+                thisSymbol.setStyle(esri.symbol.SimpleMarkerSymbol.STYLE_SQUARE);
+                thisSymbol.setColor(new dojo.Color([153,0,51,0.75]));
+
+                var geom;
+        
+                dojo.every(candidates,function(candidate){   // once locator has found address
+                    // map will zoom to that location and give it a marker
+                    console.log(candidate.score);
+                    if (candidate.score > 80) {
+                        console.log(candidate.location);
+                        var attributes = { address: candidate.address, score:candidate.score, locatorName:candidate.attributes.Loc_name };   
+                        geom = candidate.location;
+                        var graphic = new esri.Graphic(geom, thisSymbol, attributes);
+                        //add a graphic to the map at the geocoded location
+                        map.graphics.add(graphic);
+                        map.centerAndZoom(geom,15);
+                        map.graphics.add(new esri.Graphic(geom));
+                        map.centerAndZoom(geom,15);
+                        return false; //break out of loop after one candidate with score greater  than 80 is found.
+                    }
+                });	
+
+                alert ("note, the ESRI locator isn't so great! If you didn't get where you hoped, try again with more details in your entry. Check out Google's geocoder...");
+	  
+	  
+            }
+
+            ///////////
+
+            function initializeIdentifyTask(map){
+                // identify task is for popup window, which appears on map click
+                dojo.connect(map,"onClick",executeIdentifyTask);
+       
+                //create identify tasks and setup parameters 
+                identifyTask = new esri.tasks.IdentifyTask("http://server.arcgisonline.com/ArcGIS/rest/services/Demographics/USA_Labor_Force_Participation_Rate/MapServer");
+       
+                identifyParams = new esri.tasks.IdentifyParameters();
+                identifyParams.tolerance = 3;
+                identifyParams.returnGeometry = true;
+
+                identifyParams.layerIds = [3];
+                identifyParams.layerOption = esri.tasks.IdentifyParameters.LAYER_OPTION_ALL;
+                identifyParams.width  = map.width;
+                identifyParams.height = map.height;
+            }
+      
+            function executeIdentifyTask(evt) 
+            {
+                console.log("map clicked, identify task executing"); 
+	
+                //console.log("object id: " + id);
+
+                console.log("current zoom?" + map.getZoom());
+                if (map.getZoom() > 12)   // at greater zoom levels, tract info will be available in popup
+                    identifyParams.layerIds = [2,3];
+                else { identifyParams.layerIds = [3];}
+       
+                identifyParams.geometry = evt.mapPoint;
+                identifyParams.mapExtent = map.extent;
+       
+                var deferred = identifyTask.execute(identifyParams);  // deferred function fully completels before moving on
+                // insures that data will be available
+                deferred.addCallback(function(response) {     
+                    // response is an array of identify result objects    
+                    // Let's return an array of features.
+                    return dojo.map(response, function(result) {
+                        var feature = result.feature;
+                        feature.attributes.layerName = result.layerName;
+                        if(result.layerName === 'Block Groups'){
+                            // 
+                            var template = new esri.InfoTemplate("TRACT:", "Tract ID: ${Name} <br/> Name: ${ID}");
+                            feature.setInfoTemplate(template);
+                        }
+                        else if (result.layerName === 'Tracts'){
+                            var template = new esri.InfoTemplate("BLOCK", "Block ID: ${Name} <br/> Name: ${ID}");
+                            feature.setInfoTemplate(template);
+                        }
+                        else if (result.layerName === 'Counties'){
+                            var template = new esri.InfoTemplate("COUNTY:", "County ID: ${Name} <br/> Name: ${ID}");
+                            feature.setInfoTemplate(template);
+                        }
+                        else if (result.layerName === 'States'){
+                            var template = new esri.InfoTemplate("STATE:", "State ID: ${Name} <br/> Name: ${ID}");
+                            feature.setInfoTemplate(template);
+                        }
+                        return feature;
+                    });
+                });
+
+      
+                // InfoWindow expects an array of features from each deferred
+                // object that you pass. If the response from the task execution 
+                // above is not an array of features, then you need to add a callback
+                // like the one above to post-process the response and return an
+                // array of features.
+                map.infoWindow.setFeatures([ deferred ]);
+                map.infoWindow.show(evt.mapPoint);
+            }
+      
+            function startDraw(map) 
+            {
+                console.log("begin draw query setup");
+                // user draws a shape, which is the extent of a query
+                // note differences in this query and county query above
+                map.graphics.clear();	
+        
+                drawQuery = new esri.tasks.Query();
+                drawQuery.returnGeometry = true;
+                drawQuery.outFields =["NAME", "TOTPOP_CY", "CIVLBFR_CY"];
+                drawQuery.outSpatialReference = map.spatialReference;
+                drawQuery.spatialRelationship = esri.tasks.Query.SPATIAL_REL_INTERSECTS;
+	
+                drawQueryTask = new esri.tasks.QueryTask("http://server.arcgisonline.com/ArcGIS/rest/services/Demographics/USA_Labor_Force_Participation_Rate/MapServer/2");
+
+                console.log("on or off? : " + onOff);
+                if (onOff ==0){		//on off switch needed to enable and disable draw query
+                    // since Identify Taks also uses map clicks as event trigger
+							
+                    tb.activate(esri.toolbars.Draw.FREEHAND_POLYGON);
+                    onOff =1;
+                    dojo.byId("onOrOff").innerHTML = "click to stop draw";
+                    dojo.connect(tb, "onDrawEnd", findFeatures);
+
+                }	
+                else if(onOff ==1){
+			
+                    tb.deactivate(); // turns off toolbar
+                    onOff=0;
+                    dojo.byId("onOrOff").innerHTML = "click to start draw";
+                    dojo.byId("drawQueryResults").innerHTML = "";
+
+                }        
+
+            }
+	
+            function findFeatures(extent) 
+            { 
+                drawQuery.geometry = extent;  // key line here- the geometry of the drawan polygon is the limit of the query
+                drawQueryTask.execute(drawQuery,findPointsInExtent );
+            }
+
+            //find all points within argument extent
+            function findPointsInExtent(featureSet) 
+            {
+                console.log("draw query done, now adding graphics and text");
+                map.graphics.clear();
+		
+                var drawQueryFeatures = featureSet.features;	
+                var max = 0;  var maxIndex = 0;
+                var highlightSymbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,0,0]), 2), new dojo.Color([0,255,255,0.5]));
+                var defaulSymbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,0,0]), 2), new dojo.Color([255,255,0,0.5]));
+      
+                // for loop here is simply to find the largest value among the returned tracts
+                for(var i = 0; i < drawQueryFeatures.length; i++) {
+                    drawQueryFeatures[i].setSymbol(defaulSymbol);
+                    map.graphics.add(drawQueryFeatures[i]);
+
+                    if((drawQueryFeatures[i].attributes.TOTPOP_CY) > max) {
+                        max = (drawQueryFeatures[i].attributes.TOTPOP_CY);
+                        maxIndex = i;
+
+                    }
+                }
+
+		
+                drawQueryFeatures[maxIndex].setSymbol(highlightSymbol);
+                map.graphics.add(drawQueryFeatures[maxIndex]);
+			  
+                var locExtent = new esri.geometry.Extent();
+                locExtent = drawQueryFeatures[maxIndex].geometry.getExtent();
+                map.setExtent(locExtent.expand(2));
+			
+                // below addes text to the sidebar...see HTML for 'drawQueryResults' placeholder
+			
+                var content = "Draw Query Results:"
+                content += "<br><small><b>Name of Tract:</small></b>\t" + drawQueryFeatures[maxIndex].attributes.NAME + "<br>";
+                content += "<small><b>Population in Tract:</small></b>\t" + drawQueryFeatures[maxIndex].attributes.TOTPOP_CY + "<br>";
+                content += "<small><b>No. of Civilians in Labor Force:</small></b>\t" + drawQueryFeatures[maxIndex].attributes.CIVLBFR_CY;
+			
+                content += "<br><br><small><i>Note: ArcGIS Javascript queries only return up to 1000 values!</i></small><br>";
+                dojo.byId("drawQueryResults").innerHTML = content;
+			
+		
+            }	// end 	 findPointsInExtent			 
+      
+            dojo.ready(init); // init loads on page load
+      
+      
+    </script>
+  </head>
+  <!------------- below is the HTML, or basic framework of page
+  ----------------------------------------------------------->
+  
+<body class="claro">
+		<div id="mainPage" dojotype="dijit.layout.BorderContainer" design="headline" gutters="false" style=" width: 100%; height: 100%; ">
+			<div id="header" dojotype="dijit.layout.ContentPane" region= "top">
+			<div id="title"><h1>ArcGIS API for Javascript Demo</h1></div>	
+			<div id="opacity"><h2>use Dojo slider to change opacity of census layer</h2></div>
+			
+			</div>
+
+			<div id="map" dojotype="dijit.layout.ContentPane"  region= "center">
+				
+			</div><br>
+
+			<div dojotype="dijit.layout.ContentPane" id="sidebar" region="right" title="Layers">
+			 
+				<b><h1>Sample Tasks:</h1></b><br><br>
+				<b>ESRI Locator:</b><br><small><i>note: ESRI locator not always so great! we use a Google geocoder at the DOT</i></small>
+				 <input type="text" id="address" value="Enter an address">  <button id="locate" onClick="locate()">locate</button>
+				 
+				<br><br><br><b>Find a County with QueryTask:</b>
+				<select id="countyList" onchange="executeCountyQuery(this)">
+					<option value="New York">New York</option>
+					<option value="Kings">Kings</option>
+					<option value="Queens">Queens</option>
+					<option value="Richmond">Richmond</option>	
+					<option value="Bronx">Bronx</option>
+				</select>
+				<br><br><br><br>
+				<b>Query Area using Draw Toolbar:</b><br>
+				<small>find tract with largest population within a drawn polygon:</small><br><br>
+				<button id="drawButton" onClick="startDraw(map)"><span id="onOrOff">click to start draw</span></button><br><br>
+				<small><i>note: Engaging draw toolbar will disable click-and-pan. 
+				Press the above button again to shut off draw tool and re-enable pan.</i></small>
+				<br><br>
+				<span id="drawQueryResults"></span>
+				<br><br><br>
+				<b>Identify Task:</b>
+				<small>This task is enabled on page load.  Click on the map to see popup infoWindow.  Note that the 
+					infoWindow parameters change at different zoom levels.</small>
+					<br><br>
+					
+					
+				
+			</div><!--COntentPane-->
+
+		</div><!--mainpage-->
+		
+	</body>
+
+</html>
+ 
